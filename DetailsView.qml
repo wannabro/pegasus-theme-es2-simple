@@ -1,6 +1,7 @@
 import QtQuick 2.15 // Text padding needs 2.7, horizontal Gradient needs 2.13
 import QtMultimedia 5.9
 import QtGraphicalEffects 1.12
+import SortFilterProxyModel 0.2
 import "utils.js" as Utils // some helper functions
 
 // The details "view". Consists of some images, a bunch of textual info and a game list.
@@ -9,9 +10,77 @@ FocusScope {
 
     // This will be set in the main theme file
     property var currentCollection
-    // Shortcuts for the game list's currently selected game
+
+    // The list shows either every game of the collection or only the favorites.
+    // Favorites are saved by Pegasus itself, the theme only toggles the flag.
+    property bool favoritesOnly: false
+    readonly property int favoriteCount: favoriteGames.count
+
+    SortFilterProxyModel {
+        id: favoriteGames
+        sourceModel: currentCollection.games
+        filters: ValueFilter { roleName: "favorite"; value: true }
+    }
+    SortFilterProxyModel {
+        id: shownGames
+        sourceModel: currentCollection.games
+        filters: ValueFilter { roleName: "favorite"; value: true; enabled: root.favoritesOnly }
+    }
+
+    // Shortcuts for the game list's currently selected game. currentGameIndex is
+    // the row in the (maybe filtered) list, currentSourceIndex the collection's index.
     property alias currentGameIndex: gameList.currentIndex
-    readonly property var currentGame: currentCollection.games.get(currentGameIndex)
+    readonly property int currentSourceIndex: {
+        shownGames.count; root.favoritesOnly; // re-evaluate when the list changes
+        // While the filter switches the list may briefly have no selection
+        return Math.max(0, shownGames.mapToSource(currentGameIndex));
+    }
+    readonly property var currentGame: currentCollection.games.get(currentSourceIndex)
+
+    // Set by the main theme before restoring, to select that game once
+    property string restoreTitle: ""
+
+    // Show only the favorites by default if the collection has any. A game
+    // restored from the last session is always shown, even if not a favorite.
+    function applyDefaultFilter() {
+        const games = currentCollection.games;
+        let sourceIndex = currentSourceIndex;
+        let mustShow = false;
+        if (restoreTitle !== "") {
+            sourceIndex = -1;
+            for (let i = 0; i < games.count; i++) {
+                if (games.get(i).title === restoreTitle) {
+                    sourceIndex = i;
+                    mustShow = true;
+                    break;
+                }
+            }
+            restoreTitle = "";
+        }
+
+        favoritesOnly = favoriteCount > 0;
+        if (mustShow && favoritesOnly && !games.get(sourceIndex).favorite)
+            favoritesOnly = false;
+        selectSourceIndex(sourceIndex);
+    }
+
+    function selectSourceIndex(sourceIndex) {
+        const row = sourceIndex >= 0 ? shownGames.mapFromSource(sourceIndex) : -1;
+        currentGameIndex = row >= 0 ? row : 0;
+    }
+
+    function toggleFavoritesOnly() {
+        if (!favoritesOnly && favoriteCount === 0)
+            return;
+        const sourceIndex = currentSourceIndex;
+        favoritesOnly = !favoritesOnly;
+        selectSourceIndex(sourceIndex);
+    }
+
+    onCurrentCollectionChanged: Qt.callLater(applyDefaultFilter)
+    onFocusChanged: if (focus) Qt.callLater(applyDefaultFilter)
+    // Unfavoriting the last favorite would leave an empty list
+    onFavoriteCountChanged: if (favoritesOnly && favoriteCount === 0) favoritesOnly = false
 
     // Nothing particularly interesting, see CollectionsView for more comments
     width: parent.width
@@ -53,6 +122,25 @@ FocusScope {
         if (api.keys.isPrevPage(event)) {
             event.accepted = true;
             prevCollection();
+            return;
+        }
+        if (api.keys.isFilters(event)) {
+            event.accepted = true;
+            if (!currentGame)
+                return;
+            // Unfavoriting the last favorite: switch to all games, staying on this one
+            const sourceIndex = currentSourceIndex;
+            const wasLast = favoritesOnly && favoriteCount === 1 && currentGame.favorite;
+            currentGame.favorite = !currentGame.favorite;
+            if (wasLast) {
+                favoritesOnly = false;
+                selectSourceIndex(sourceIndex);
+            }
+            return;
+        }
+        if (api.keys.isDetails(event)) {
+            event.accepted = true;
+            toggleFavoritesOnly();
             return;
         }
     }
@@ -164,7 +252,7 @@ FocusScope {
                 left: parent.left; leftMargin: content.textLeft
                 right: mediaArea.left; rightMargin: content.paddingH
             }
-            text: currentGame.title
+            text: (currentGame.favorite ? "★ " : "") + currentGame.title
             font.pixelSize: vpx(28)
             font.weight: Font.Normal
             font.capitalization: Font.MixedCase
@@ -377,7 +465,7 @@ FocusScope {
 
             focus: true
 
-            model: currentCollection.games
+            model: shownGames
             delegate: Rectangle {
                 readonly property bool selected: ListView.isCurrentItem
                 readonly property color clrDark: "#393a3b"
@@ -389,7 +477,7 @@ FocusScope {
 
                 Text {
                     id: gameTitle
-                    text: modelData.title
+                    text: (modelData.favorite ? "★ " : "") + modelData.title
                     color: parent.selected ? parent.clrDark : parent.clrLight
 
                     font.pixelSize: vpx(20)
@@ -420,5 +508,67 @@ FocusScope {
         anchors.right: parent.right
         height: vpx(25) * 1.5
         color: header.color
+
+        // Which games the list shows, on the left
+        Text {
+            anchors {
+                verticalCenter: parent.verticalCenter
+                left: parent.left; leftMargin: header.paddingH
+            }
+            text: root.favoritesOnly
+                  ? "★ FAVORITES  %1 / %2".arg(shownGames.count).arg(currentCollection.games.count)
+                  : "ALL GAMES  %1".arg(shownGames.count)
+            font.family: "Open Sans"
+            font.pixelSize: vpx(13)
+            color: "#393a3b"
+        }
+
+        // Button hints on the right: gamepad button / keyboard key, then the action
+        Row {
+            anchors {
+                verticalCenter: parent.verticalCenter
+                right: parent.right; rightMargin: header.paddingH
+            }
+            spacing: vpx(18)
+
+            Repeater {
+                model: [
+                    { pad: "A", key: "Enter", label: "LAUNCH" },
+                    { pad: "B", key: "Esc", label: "BACK" },
+                    { pad: "Y", key: "F", label: currentGame && currentGame.favorite ? "UNFAVORITE" : "FAVORITE" },
+                    { pad: "X", key: "I", label: root.favoritesOnly ? "SHOW ALL" : "FAVORITES ONLY" },
+                    { pad: "L1/R1", key: "Q/E", label: "SYSTEM" }
+                ]
+
+                Row {
+                    spacing: vpx(6)
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    Rectangle {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: keyText.width + vpx(10)
+                        height: keyText.height + vpx(2)
+                        radius: vpx(3)
+                        color: "#393a3b"
+
+                        Text {
+                            id: keyText
+                            anchors.centerIn: parent
+                            text: modelData.pad + " / " + modelData.key
+                            font.family: "Open Sans"
+                            font.pixelSize: vpx(11)
+                            color: "#e8e9ea"
+                        }
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: modelData.label
+                        font.family: "Open Sans"
+                        font.pixelSize: vpx(12)
+                        color: "#393a3b"
+                    }
+                }
+            }
+        }
     }
 }

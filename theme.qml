@@ -29,15 +29,14 @@ FocusScope {
     }
 
     function restorePosition() {
+        // The details view selects the game itself, as its list may be filtered
+        detailsView.restoreTitle = api.memory.get('gameTitle') || '';
+
         const collectionIdx = findIndex(api.collections, 'name', api.memory.get('collectionName'));
         collectionsView.currentCollectionIndex = collectionIdx >= 0
             ? collectionIdx
             : (api.memory.get('collectionIndex') || 0);
-
-        const gameIdx = findIndex(collectionsView.currentCollection.games, 'title', api.memory.get('gameTitle'));
-        detailsView.currentGameIndex = gameIdx >= 0
-            ? gameIdx
-            : (api.memory.get('gameIndex') || 0);
+        Qt.callLater(detailsView.applyDefaultFilter);
 
         if (api.memory.get('view') === 'details')
             detailsView.focus = true;
@@ -48,7 +47,7 @@ FocusScope {
         const game = detailsView.currentGame;
 
         api.memory.set('collectionIndex', collectionsView.currentCollectionIndex);
-        api.memory.set('gameIndex', detailsView.currentGameIndex);
+        api.memory.set('gameIndex', detailsView.currentSourceIndex);
         api.memory.set('collectionName', collection ? collection.name : '');
         api.memory.set('gameTitle', game ? game.title : '');
         api.memory.set('view', detailsView.focus ? 'details' : 'collections');
