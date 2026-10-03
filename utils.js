@@ -134,3 +134,24 @@ function deviceImage(shortName) {
     return deviceNames.indexOf(name) >= 0 ? "devices/" + name + ".png" : "";
 }
 
+
+// How the details header shows a system's logo. Most are painted white; some
+// turn into a solid shape that way (a background box, or they rely on their
+// colors), so they keep their own colors; others only get their dark, colorless
+// parts (usually the lettering) turned white and keep the colored ones.
+var colorLogos = [
+    "amstradgx4000", "atarilynx", "c64", "colecovision", "cps1", "cps2", "cps3",
+    "dragon32", "fba", "gba", "genesis", "megadrive", "model2", "model3",
+    "n64dd", "odyssey2", "openbor", "pokemini", "residualvm", "scummvm", "segacd",
+    "vectrex", "daphne", "fds", "neogeo", "snes", "neocd", "n64"
+];
+var lightenLogos = ["gamegear"];
+
+// "white", "color" or "lighten"
+function logoStyle(shortName) {
+    if (colorLogos.indexOf(shortName) >= 0)
+        return "color";
+    if (lightenLogos.indexOf(shortName) >= 0)
+        return "lighten";
+    return "white";
+}
