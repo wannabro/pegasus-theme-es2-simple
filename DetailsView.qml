@@ -373,24 +373,34 @@ FocusScope {
             GameInfoText { width: parent.width; text: Utils.formatPlayTime(currentGame.playTime) }
         }
 
-        // Game video on the top right, always playing. The box is sized to the
-        // system's screen aspect ratio right away, so it never changes size
-        // while a game is selected. The screenshot is shown until the video
-        // plays, and for games without a video.
+        // Game video on the top right, always playing. The box is sized right
+        // away, so it never changes size while a game is selected: to the
+        // video's own aspect ratio if the metadata has it (x-video-aspect,
+        // measured beforehand), else to the system's screen aspect ratio.
+        // The box is black until the video plays, then the video fades in.
+        // Games without a video show their screenshot instead.
         Rectangle {
             id: media
             anchors { top: mediaArea.top; right: mediaArea.right }
 
-            readonly property real aspectRatio: Utils.screenAspect(currentCollection.shortName)
+            readonly property real aspectRatio: {
+                const extra = currentGame ? currentGame.extra : null;
+                const measured = extra ? parseFloat(extra["video-aspect"] || extra["x-video-aspect"]) : NaN;
+                return measured > 0 ? measured : Utils.screenAspect(currentCollection.shortName);
+            }
 
             width: Math.min(mediaArea.height * aspectRatio, mediaArea.width)
             height: width / aspectRatio
             color: "#000"
 
+            readonly property bool hasVideo: !!(currentGame && currentGame.assets.video)
+
             function reload() {
+                videoFadeIn.stop();
+                gameVideo.opacity = 0;
                 gameVideo.stop();
                 gameVideo.source = "";
-                if (root.enabled && currentGame && currentGame.assets.video)
+                if (root.enabled && hasVideo)
                     videoDelay.restart();
                 else
                     videoDelay.stop();
@@ -402,7 +412,7 @@ FocusScope {
                 source: currentGame.assets.screenshot
                 sourceSize { width: 512; height: 512 }
                 fillMode: Image.PreserveAspectFit
-                visible: gameVideo.playbackState !== MediaPlayer.PlayingState
+                visible: !media.hasVideo
             }
 
             Video {
@@ -411,7 +421,20 @@ FocusScope {
                 fillMode: VideoOutput.PreserveAspectFit
                 loops: MediaPlayer.Infinite
                 muted: true
-                visible: playbackState === MediaPlayer.PlayingState
+                opacity: 0
+
+                onPlaybackStateChanged: {
+                    if (playbackState === MediaPlayer.PlayingState)
+                        videoFadeIn.restart();
+                }
+
+                NumberAnimation {
+                    id: videoFadeIn
+                    target: gameVideo
+                    property: "opacity"
+                    from: 0; to: 1
+                    duration: 250
+                }
 
                 // Short wait so fast scrolling doesn't load every video on the way
                 Timer {
