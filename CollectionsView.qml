@@ -24,11 +24,28 @@ FocusScope {
     // Systems hidden in the settings menu, by short name. Saved by the theme.
     property var hiddenCollections: api.memory.get('hiddenCollections') || []
 
+    // Systems sorted by release year; all of them (for the settings menu) and
+    // the shown ones (for the carousels). The sorter's expression can't see
+    // the Utils import, so it goes through this function.
+    function collectionLessThan(a, b) {
+        return Utils.collectionLessThan(a, b);
+    }
+
+    SortFilterProxyModel {
+        id: sortedCollections
+        sourceModel: api.collections
+        sorters: ExpressionSorter {
+            expression: root.collectionLessThan(modelLeft, modelRight)
+        }
+    }
     SortFilterProxyModel {
         id: shownCollections
         sourceModel: api.collections
         filters: ExpressionFilter {
             expression: root.hiddenCollections.indexOf(model.shortName) < 0
+        }
+        sorters: ExpressionSorter {
+            expression: root.collectionLessThan(modelLeft, modelRight)
         }
     }
 
@@ -294,6 +311,7 @@ FocusScope {
 
         property string selectedName: "" // system selected when the menu was opened
 
+        model: sortedCollections
         hidden: root.hiddenCollections
         hintSource: root.hintSource
 

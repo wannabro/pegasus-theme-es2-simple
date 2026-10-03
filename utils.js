@@ -98,6 +98,37 @@ var deviceAliases = {
     "openbor": "arcade" // a PC game engine, no hardware; arcade-style beat 'em ups
 };
 
+// First release year of each system, used to sort the systems. Emulator
+// collections without a single hardware (MAME, FBNeo, ...) go to the end.
+var releaseYears = {
+    "gameandwatch": 1980, "dos": 1981, "pc": 1981,
+    "famicom": 1983, "sg-1000": 1983, "sg1000": 1983, "msx": 1983,
+    "nes": 1985, "mastersystem": 1985, "fds": 1986,
+    "pcengine": 1987, "tg16": 1987, "megadrive": 1988, "genesis": 1988,
+    "pcenginecd": 1988, "pcecd": 1988, "cps1": 1988, "gb": 1989, "atarilynx": 1989,
+    "snes": 1990, "sfc": 1990, "neogeo": 1990, "gamegear": 1990, "amstradgx4000": 1990,
+    "segacd": 1991, "megacd": 1991, "supervision": 1992,
+    "3do": 1993, "cps2": 1993, "model2": 1993, "atarijaguar": 1993,
+    "saturn": 1994, "psx": 1994, "sega32x": 1994, "neocd": 1994, "pcfx": 1994,
+    "virtualboy": 1995, "zinc": 1995, "n64": 1996, "cps3": 1996, "model3": 1996,
+    "gbc": 1998, "ngp": 1998, "dreamcast": 1998, "naomi": 1998,
+    "ngpc": 1999, "wonderswan": 1999, "wonderswancolor": 2000, "ps2": 2000,
+    "gba": 2001, "gc": 2001, "pokemini": 2001, "atomiswave": 2003, "steam": 2003,
+    "nds": 2004, "psp": 2004, "wii": 2006, "3ds": 2011, "psvita": 2011, "switch": 2017
+};
+
+function releaseYear(shortName) {
+    return releaseYears[shortName] || 9999;
+}
+
+// Sort order: release year, then name
+function collectionLessThan(a, b) {
+    var ya = releaseYear(a.shortName), yb = releaseYear(b.shortName);
+    if (ya !== yb)
+        return ya < yb;
+    return a.name.toLowerCase() < b.name.toLowerCase();
+}
+
 function deviceImage(shortName) {
     var name = deviceAliases[shortName] || shortName;
     return deviceNames.indexOf(name) >= 0 ? "devices/" + name + ".png" : "";

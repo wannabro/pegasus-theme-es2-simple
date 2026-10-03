@@ -7,6 +7,7 @@ FocusScope {
     id: root
 
     // Set by the collections view
+    property var model               // every collection, in display order
     property var hidden: []          // short names of the hidden collections
     property var hintSource          // provides keyHint(), see DetailsView
 
@@ -30,10 +31,10 @@ FocusScope {
             return;
         if (api.keys.isAccept(event)) {
             event.accepted = true;
-            const c = api.collections.get(list.currentIndex);
+            const item = list.currentItem;
             // Keep at least one system visible
-            if (c && (hidden.indexOf(c.shortName) >= 0 || shownCount > 1))
-                toggled(c.shortName);
+            if (item && (!item.shown || shownCount > 1))
+                toggled(item.shortName);
             return;
         }
         if (api.keys.isFilters(event)) {
@@ -81,7 +82,7 @@ FocusScope {
             }
             clip: true
             focus: true
-            model: api.collections
+            model: root.model
 
             // The list gets every key first and consumes up/down itself
             Keys.onPressed: if (root.hintSource) root.hintSource.updateInputMode(event)
@@ -92,7 +93,8 @@ FocusScope {
 
             delegate: Rectangle {
                 readonly property bool selected: ListView.isCurrentItem
-                readonly property bool shown: root.hidden.indexOf(modelData.shortName) < 0
+                readonly property string shortName: modelData.shortName
+                readonly property bool shown: root.hidden.indexOf(shortName) < 0
 
                 width: ListView.view.width
                 height: vpx(44)
