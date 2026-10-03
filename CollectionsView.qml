@@ -1,4 +1,5 @@
-import QtQuick 2.0
+import QtQuick 2.15
+import SortFilterProxyModel 0.2
 import "utils.js" as Utils
 
 // The collections view consists of two carousels, one for the collection logo bar
@@ -17,10 +18,58 @@ FocusScope {
 
     signal collectionSelected
 
+    // Provides keyHint() for the button hints (the details view)
+    property var hintSource
+
+    // Systems hidden in the settings menu, by short name. Saved by the theme.
+    property var hiddenCollections: api.memory.get('hiddenCollections') || []
+
+    SortFilterProxyModel {
+        id: shownCollections
+        sourceModel: api.collections
+        filters: ExpressionFilter {
+            expression: root.hiddenCollections.indexOf(model.shortName) < 0
+        }
+    }
+
     // Shortcut for the currently selected collection. They will be used
     // by the Details view too, for example to show the collection's logo.
+    // currentCollectionIndex is the position among the shown systems.
     property alias currentCollectionIndex: logoAxis.currentIndex
-    readonly property var currentCollection: logoAxis.model.get(logoAxis.currentIndex)
+    readonly property var currentCollection: {
+        shownCollections.count; // re-evaluate when the shown systems change
+        return api.collections.get(Math.max(0, shownCollections.mapToSource(logoAxis.currentIndex)));
+    }
+
+    // Selects a system by its name; returns false if it's not shown
+    function selectCollectionByName(name) {
+        for (let i = 0; i < api.collections.count; i++) {
+            if (api.collections.get(i).name !== name)
+                continue;
+            const row = shownCollections.mapFromSource(i);
+            if (row < 0)
+                return false;
+            logoAxis.currentIndex = row;
+            return true;
+        }
+        return false;
+    }
+
+    function setHidden(list) {
+        hiddenCollections = list;
+        api.memory.set('hiddenCollections', list);
+    }
+
+    function openSystemsMenu() {
+        systemsMenu.selectedName = currentCollection ? currentCollection.name : "";
+        systemsMenu.focus = true;
+    }
+    function closeSystemsMenu() {
+        logoAxis.focus = true;
+        // Stay on the same system if it's still shown
+        if (!selectCollectionByName(systemsMenu.selectedName))
+            logoAxis.currentIndex = Math.min(logoAxis.currentIndex, shownCollections.count - 1);
+    }
 
     // These functions can be called by other elements of the theme if the collection
     // has to be changed manually. See the connection between the Collection and
@@ -40,7 +89,7 @@ FocusScope {
         anchors.fill: parent
         itemWidth: width
 
-        model: api.collections
+        model: shownCollections
         delegate: bgAxisItem
         currentIndex: logoAxis.currentIndex
 
@@ -93,7 +142,7 @@ FocusScope {
             anchors.fill: parent
             itemWidth: vpx(480)
 
-            model: api.collections
+            model: shownCollections
             delegate: CollectionLogo {
                 longName: modelData.name
                 shortName: modelData.shortName
@@ -102,6 +151,8 @@ FocusScope {
             focus: true
 
             Keys.onPressed: {
+                if (root.hintSource)
+                    root.hintSource.updateInputMode(event);
                 if (event.isAutoRepeat)
                     return;
 
@@ -112,6 +163,10 @@ FocusScope {
                 else if (api.keys.isPrevPage(event)) {
                     event.accepted = true;
                     decrementCurrentIndex();
+                }
+                else if (api.keys.isDetails(event)) {
+                    event.accepted = true;
+                    root.openSystemsMenu();
                 }
             }
 
@@ -132,7 +187,7 @@ FocusScope {
         }
         itemWidth: logoAxis.itemWidth // same spacing, so each photo sits under its logo
 
-        model: api.collections
+        model: shownCollections
         delegate: Item {
             readonly property bool selected: PathView.isCurrentItem
 
@@ -191,5 +246,67 @@ FocusScope {
             font.pixelSize: vpx(25)
             font.family: "Open Sans"
         }
+    }
+
+    // Button hint for the settings menu, bottom right (gamepad or keyboard,
+    // whichever was used last, like in the details view)
+    Item {
+        anchors { right: parent.right; rightMargin: vpx(30); bottom: parent.bottom; bottomMargin: vpx(16) }
+        width: hintRow.width
+        height: hintRow.height
+        visible: !!root.hintSource
+
+        Row {
+            id: hintRow
+            spacing: vpx(6)
+
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: keyText.width + vpx(10)
+                height: keyText.height + vpx(2)
+                radius: vpx(3)
+                color: "#393a3b"
+
+                Text {
+                    id: keyText
+                    anchors.centerIn: parent
+                    text: root.hintSource ? root.hintSource.keyHint(api.keys.details) : ""
+                    font.family: "Open Sans"
+                    font.pixelSize: vpx(11)
+                    color: "#e8e9ea"
+                }
+            }
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: "SYSTEMS"
+                font.family: "Open Sans"
+                font.pixelSize: vpx(12)
+                // Light text with a dark edge, readable on any background art
+                color: "#e8e9ea"
+                style: Text.Outline
+                styleColor: Qt.rgba(0, 0, 0, 0.6)
+            }
+        }
+    }
+
+    SystemsMenu {
+        id: systemsMenu
+
+        property string selectedName: "" // system selected when the menu was opened
+
+        hidden: root.hiddenCollections
+        hintSource: root.hintSource
+
+        onToggled: {
+            const list = root.hiddenCollections.slice();
+            const i = list.indexOf(shortName);
+            if (i >= 0)
+                list.splice(i, 1);
+            else
+                list.push(shortName);
+            root.setHidden(list);
+        }
+        onShowAll: root.setHidden([])
+        onClosed: root.closeSystemsMenu()
     }
 }

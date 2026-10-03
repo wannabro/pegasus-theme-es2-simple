@@ -4,10 +4,8 @@ import QtQuick 2.15 // Connections.enabled and function-style handlers need 2.15
 // and a way to move (and animate moving) between them.
 FocusScope {
     // When the theme loads, try to restore the last selected collection, game
-    // and view. The collection and game are looked up by name first, so they are
-    // found even if the list of collections changed; the saved indices are only
-    // used as fallback. If this is the first time launching this theme, these
-    // values will be undefined, which is why there are zeroes as fallback.
+    // and view. The collection and game are looked up by name, so they are
+    // found even if the list of collections changed or some are hidden.
     Component.onCompleted: {
         restorePosition();
         restoreReady = true;
@@ -18,24 +16,13 @@ FocusScope {
 
     property bool restoreReady: false
 
-    function findIndex(model, role, value) {
-        if (value === undefined)
-            return -1;
-        for (let i = 0; i < model.count; i++) {
-            if (model.get(i)[role] === value)
-                return i;
-        }
-        return -1;
-    }
-
     function restorePosition() {
         // The details view selects the game itself, as its list may be filtered
         detailsView.restoreTitle = api.memory.get('gameTitle') || '';
 
-        const collectionIdx = findIndex(api.collections, 'name', api.memory.get('collectionName'));
-        collectionsView.currentCollectionIndex = collectionIdx >= 0
-            ? collectionIdx
-            : (api.memory.get('collectionIndex') || 0);
+        // Hidden systems are skipped; then the first shown one is used
+        if (!collectionsView.selectCollectionByName(api.memory.get('collectionName')))
+            collectionsView.currentCollectionIndex = 0;
         Qt.callLater(detailsView.applyDefaultFilter);
 
         if (api.memory.get('view') === 'details')
@@ -86,6 +73,7 @@ FocusScope {
         anchors.bottom: parent.bottom
 
         focus: true
+        hintSource: detailsView
         onCollectionSelected: detailsView.focus = true
     }
     DetailsView {
