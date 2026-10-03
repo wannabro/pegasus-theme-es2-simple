@@ -1,4 +1,5 @@
 import QtQuick 2.0
+import "utils.js" as Utils
 
 // The collections view consists of two carousels, one for the collection logo bar
 // and one for the background images. They should have the same number of elements
@@ -118,8 +119,59 @@ FocusScope {
         }
     }
 
+    // Console photos below the game count, moving together with the logo bar.
+    // The selected one is large, the neighbours small and faded.
+    Carousel {
+        id: deviceAxis
+
+        anchors {
+            left: parent.left
+            right: parent.right
+            top: countBar.bottom; topMargin: vpx(10)
+            bottom: parent.bottom; bottomMargin: vpx(10)
+        }
+        itemWidth: logoAxis.itemWidth // same spacing, so each photo sits under its logo
+
+        model: api.collections
+        delegate: Item {
+            readonly property bool selected: PathView.isCurrentItem
+
+            width: deviceAxis.itemWidth
+            height: deviceAxis.height
+            visible: PathView.onPath
+
+            opacity: selected ? 1.0 : 0.45
+            Behavior on opacity { NumberAnimation { duration: 150 } }
+
+            // Every photo gets about the same area, so wide ones (eg. a console
+            // next to its arcade stick) don't look much bigger than tall ones
+            Image {
+                id: deviceImage
+                readonly property real aspect: implicitHeight > 0 ? implicitWidth / implicitHeight : 1
+                readonly property real targetArea: vpx(165) * vpx(165)
+                readonly property real fitWidth: Math.min(Math.sqrt(targetArea * aspect),
+                                                          parent.width * 0.8,
+                                                          parent.height * 0.85 * aspect)
+
+                anchors.centerIn: parent
+                width: fitWidth
+                height: fitWidth / aspect
+                fillMode: Image.PreserveAspectFit
+                source: Utils.deviceImage(modelData.shortName)
+                sourceSize { width: 512; height: 512 }
+                asynchronous: true
+
+                scale: parent.selected ? 1.0 : 0.6
+                Behavior on scale { NumberAnimation { duration: 200 } }
+            }
+        }
+        currentIndex: logoAxis.currentIndex
+        interactive: false // follows the logo bar only, so they never get out of sync
+    }
+
     // Game count bar -- like above, I've put it in an Item to separately control opacity
     Item {
+        id: countBar
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: logoBar.bottom

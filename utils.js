@@ -71,3 +71,35 @@ function screenAspect(shortName) {
     return screenAspects[shortName] || 4 / 3;
 }
 
+
+// Console photos in devices/ (from the COLORFUL theme). Collections with a
+// different short name are mapped to the photo's name; arcade boards
+// without their own photo use the generic arcade cabinet.
+var deviceNames = [
+    "3do", "3ds", "amiga", "android", "arcade", "atari2600", "atari5200",
+    "atari7800", "atarijaguar", "atarilynx", "atomiswave", "c64", "cdi",
+    "colecovision", "cps1", "cps2", "cps3", "dos", "dreamcast", "famicom",
+    "fds", "gamecube", "gamegear", "gb", "gba", "gbc", "genesis", "gw", "gx4000",
+    "intellivision", "mastersystem", "megadrive", "msx", "mvs", "n64",
+    "naomi", "nds", "neogeo", "neogeocd", "nes", "ngp", "ngpc", "odyssey2",
+    "pcecd", "pcengine", "pcfx", "pokemini", "ps2", "psp", "psx", "saturn", "scummvm",
+    "sega32x", "segacd", "sfc", "sg1000", "snes", "steam", "supergrafx", "supervision", "switch",
+    "tg16", "tgcd", "vboy", "vectrex", "vita", "wii", "wswan", "wswanc",
+    "x68000", "zxspectrum"
+];
+var deviceAliases = {
+    "gc": "gamecube", "gameandwatch": "gw", "neocd": "neogeocd",
+    "pcenginecd": "pcecd", "sg-1000": "sg1000", "virtualboy": "vboy",
+    "wonderswan": "wswan", "wonderswancolor": "wswanc", "psvita": "vita",
+    "lynx": "atarilynx", "megacd": "segacd", "32x": "sega32x",
+    "mame": "arcade", "fbneo": "arcade", "fba": "arcade", "model2": "arcade",
+    "model3": "arcade", "zinc": "arcade",
+    "amstradgx4000": "gx4000",
+    "openbor": "arcade" // a PC game engine, no hardware; arcade-style beat 'em ups
+};
+
+function deviceImage(shortName) {
+    var name = deviceAliases[shortName] || shortName;
+    return deviceNames.indexOf(name) >= 0 ? "devices/" + name + ".png" : "";
+}
+
