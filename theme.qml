@@ -3,12 +3,74 @@ import QtQuick 2.0
 // Welcome! This is the entry point of the theme; it defines two "views"
 // and a way to move (and animate moving) between them.
 FocusScope {
-    // When the theme loads, try to restore the last selected game
-    // and collection. If this is the first time launching this theme, these
-    // values will be undefined, which is why there are zeroes as fallback
+    // When the theme loads, try to restore the last selected collection, game
+    // and view. The collection and game are looked up by name first, so they are
+    // found even if the list of collections changed; the saved indices are only
+    // used as fallback. If this is the first time launching this theme, these
+    // values will be undefined, which is why there are zeroes as fallback.
     Component.onCompleted: {
-        collectionsView.currentCollectionIndex = api.memory.get('collectionIndex') || 0;
-        detailsView.currentGameIndex = api.memory.get('gameIndex') || 0;
+        restorePosition();
+        restoreReady = true;
+    }
+    // The theme is unloaded before Pegasus quits, so this saves the position
+    // even if no game was launched
+    Component.onDestruction: savePosition()
+
+    property bool restoreReady: false
+
+    function findIndex(model, role, value) {
+        if (value === undefined)
+            return -1;
+        for (let i = 0; i < model.count; i++) {
+            if (model.get(i)[role] === value)
+                return i;
+        }
+        return -1;
+    }
+
+    function restorePosition() {
+        const collectionIdx = findIndex(api.collections, 'name', api.memory.get('collectionName'));
+        collectionsView.currentCollectionIndex = collectionIdx >= 0
+            ? collectionIdx
+            : (api.memory.get('collectionIndex') || 0);
+
+        const gameIdx = findIndex(collectionsView.currentCollection.games, 'title', api.memory.get('gameTitle'));
+        detailsView.currentGameIndex = gameIdx >= 0
+            ? gameIdx
+            : (api.memory.get('gameIndex') || 0);
+
+        if (api.memory.get('view') === 'details')
+            detailsView.focus = true;
+    }
+
+    function savePosition() {
+        const collection = collectionsView.currentCollection;
+        const game = detailsView.currentGame;
+
+        api.memory.set('collectionIndex', collectionsView.currentCollectionIndex);
+        api.memory.set('gameIndex', detailsView.currentGameIndex);
+        api.memory.set('collectionName', collection ? collection.name : '');
+        api.memory.set('gameTitle', game ? game.title : '');
+        api.memory.set('view', detailsView.focus ? 'details' : 'collections');
+    }
+
+    // Also save shortly after the selection changes, in case Pegasus is not
+    // closed normally (eg. killed or crashed)
+    Timer {
+        id: saveTimer
+        interval: 1000
+        onTriggered: savePosition()
+    }
+    Connections {
+        target: collectionsView
+        enabled: restoreReady
+        function onCurrentCollectionIndexChanged() { saveTimer.restart(); }
+    }
+    Connections {
+        target: detailsView
+        enabled: restoreReady
+        function onCurrentGameIndexChanged() { saveTimer.restart(); }
+        function onFocusChanged() { saveTimer.restart(); }
     }
 
     // Loading the fonts here makes them usable in the rest of the theme
@@ -37,8 +99,7 @@ FocusScope {
         onNextCollection: collectionsView.selectNext()
         onPrevCollection: collectionsView.selectPrev()
         onLaunchGame: {
-            api.memory.set('collectionIndex', collectionsView.currentCollectionIndex);
-            api.memory.set('gameIndex', currentGameIndex);
+            savePosition();
             currentGame.launch();
         }
     }

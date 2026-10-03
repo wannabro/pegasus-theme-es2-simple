@@ -1,4 +1,5 @@
 import QtQuick 2.7 // note the version: Text padding is used below and that was added in 2.7 as per docs
+import QtMultimedia 5.9
 import "utils.js" as Utils // some helper functions
 
 // The details "view". Consists of some images, a bunch of textual info and a game list.
@@ -21,6 +22,10 @@ FocusScope {
     signal nextCollection
     signal prevCollection
     signal launchGame
+
+    // Restart the video when the selected game changes or the view gets/loses focus
+    onCurrentGameChanged: gameVideo.reload()
+    onEnabledChanged: gameVideo.reload()
 
     // Key handling. In addition, pressing left/right also moves to the prev/next collection.
     Keys.onLeftPressed: prevCollection()
@@ -173,18 +178,103 @@ FocusScope {
             GameInfoText { width: parent.width; text: Utils.formatPlayTime(currentGame.playTime) }
         }
 
-        GameInfoText {
-            id: gameDescription
+        // Game video on the bottom left, always playing (falls back to a screenshot)
+        Rectangle {
+            id: media
             anchors {
                 top: boxart.bottom; topMargin: content.paddingV
                 left: boxart.left
-                right: gameList.left; rightMargin: content.paddingH
                 bottom: parent.bottom; bottomMargin: content.paddingV
             }
+            width: Math.min(height * 16 / 9, (gameList.x - x) * 0.55)
+            color: "#000"
 
-            text: currentGame.description
-            wrapMode: Text.WordWrap
-            elide: Text.ElideRight
+            Image {
+                anchors.fill: parent
+                asynchronous: true
+                source: currentGame.assets.screenshot || currentGame.assets.boxFront
+                sourceSize { width: 512; height: 512 }
+                fillMode: Image.PreserveAspectFit
+                visible: gameVideo.playbackState !== MediaPlayer.PlayingState
+            }
+
+            Video {
+                id: gameVideo
+                anchors.fill: parent
+                fillMode: VideoOutput.PreserveAspectFit
+                loops: MediaPlayer.Infinite
+                muted: true
+                visible: playbackState === MediaPlayer.PlayingState
+
+                // Wait a bit before loading, so scrolling through the list stays smooth
+                function reload() {
+                    stop();
+                    source = "";
+                    if (root.enabled && currentGame && currentGame.assets.video)
+                        videoDelay.restart();
+                    else
+                        videoDelay.stop();
+                }
+
+                Timer {
+                    id: videoDelay
+                    interval: 300
+                    onTriggered: {
+                        gameVideo.source = currentGame.assets.video;
+                        gameVideo.play();
+                    }
+                }
+            }
+        }
+
+        // Game description on the right of the video, scrolling up automatically
+        Item {
+            id: descriptionBox
+            anchors {
+                top: media.top
+                left: media.right; leftMargin: content.paddingH
+                right: gameList.left; rightMargin: content.paddingH
+                bottom: media.bottom
+            }
+            clip: true
+
+            readonly property real overflow: Math.max(0, gameDescription.contentHeight - height)
+
+            function restartScroll() {
+                scrollAnim.stop();
+                gameDescription.y = 0;
+                if (overflow > 0)
+                    scrollAnim.start();
+            }
+
+            onOverflowChanged: restartScroll()
+
+            GameInfoText {
+                id: gameDescription
+                width: parent.width
+
+                text: currentGame.description
+                font.pixelSize: vpx(13)
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
+
+                onTextChanged: descriptionBox.restartScroll()
+            }
+
+            // Pause at the top, scroll to the end, pause, then jump back to the top
+            SequentialAnimation {
+                id: scrollAnim
+                loops: Animation.Infinite
+
+                PauseAnimation { duration: 3000 }
+                NumberAnimation {
+                    target: gameDescription; property: "y"
+                    from: 0; to: -descriptionBox.overflow
+                    duration: Math.max(1, descriptionBox.overflow / vpx(20) * 1000)
+                }
+                PauseAnimation { duration: 3000 }
+                PropertyAction { target: gameDescription; property: "y"; value: 0 }
+            }
         }
 
         ListView {
