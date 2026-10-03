@@ -47,3 +47,27 @@ function formatPlayTime(playTime) {
     return parseFloat((minutes / 60).toFixed(1)) + " hours"
 }
 
+
+// Screen aspect ratio of a system, by collection short name. Handhelds use
+// their native resolution, TV based systems are 4:3 unless listed as 16:9.
+var screenAspects = {
+    "gb": 10 / 9, "gbc": 10 / 9, "gamegear": 10 / 9, "megaduck": 10 / 9,
+    "gba": 3 / 2, "pokemini": 3 / 2,
+    "nds": 2 / 3,            // two stacked 256x192 screens
+    "3ds": 5 / 6,            // 400x240 over 320x240
+    "psp": 16 / 9, "psvita": 16 / 9,
+    "ngp": 20 / 19, "ngpc": 20 / 19,
+    "wonderswan": 14 / 9, "wonderswancolor": 14 / 9,
+    "atarilynx": 160 / 102, "lynx": 160 / 102,
+    "virtualboy": 12 / 7,
+    "supervision": 1,
+    "arduboy": 2, "gameandwatch": 4 / 3,
+    "switch": 16 / 9, "wiiu": 16 / 9, "ps3": 16 / 9, "ps4": 16 / 9,
+    "xbox360": 16 / 9, "steam": 16 / 9, "pc": 16 / 9, "windows": 16 / 9,
+    "android": 16 / 9
+};
+
+function screenAspect(shortName) {
+    return screenAspects[shortName] || 4 / 3;
+}
+

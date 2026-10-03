@@ -1,5 +1,6 @@
-import QtQuick 2.7 // note the version: Text padding is used below and that was added in 2.7 as per docs
+import QtQuick 2.15 // Text padding needs 2.7, horizontal Gradient needs 2.13
 import QtMultimedia 5.9
+import QtGraphicalEffects 1.12
 import "utils.js" as Utils // some helper functions
 
 // The details "view". Consists of some images, a bunch of textual info and a game list.
@@ -24,8 +25,8 @@ FocusScope {
     signal launchGame
 
     // Restart the video when the selected game changes or the view gets/loses focus
-    onCurrentGameChanged: gameVideo.reload()
-    onEnabledChanged: gameVideo.reload()
+    onCurrentGameChanged: media.reload()
+    onEnabledChanged: media.reload()
 
     // Key handling. In addition, pressing left/right also moves to the prev/next collection.
     Keys.onLeftPressed: prevCollection()
@@ -112,31 +113,61 @@ FocusScope {
         readonly property int paddingH: vpx(30)
         readonly property int paddingV: vpx(40)
 
-        Item {
-            id: boxart
+        // Blurred game art in the background, tinted with the base gray so the
+        // dark text stays readable
+        Image {
+            id: bgImage
+            anchors.fill: parent
+            asynchronous: true
+            source: currentGame.assets.background ||
+                    currentGame.assets.screenshot ||
+                    currentGame.assets.boxFront
+            sourceSize { width: 480; height: 480 }
+            fillMode: Image.PreserveAspectCrop
+            visible: false
+        }
+        FastBlur {
+            anchors.fill: parent
+            source: bgImage
+            radius: 48
+            visible: bgImage.status === Image.Ready
+        }
+        Rectangle {
+            anchors.fill: parent
+            color: content.color
+            opacity: 0.75
+        }
 
-            height: vpx(218)
-            width: Math.max(vpx(160), Math.min(height * boxartImage.aspectRatio, vpx(320)))
+        // Layout: text on the left (details on top, description below),
+        // media on the right (video on top, boxart below).
+        readonly property real textLeft: paddingH
+        readonly property real mediaRight: gameList.x - paddingH - vpx(40) // gap to the list panel
+        readonly property int topRowHeight: vpx(280)
+        readonly property int rowGap: vpx(30)
+
+        // Fixed area reserved for the video, so the text never moves
+        Item {
+            id: mediaArea
             anchors {
                 top: parent.top; topMargin: content.paddingV
-                left: parent.left; leftMargin: content.paddingH
+                right: parent.right; rightMargin: parent.width - content.mediaRight
             }
+            width: (content.mediaRight - content.textLeft) * 0.5
+            height: content.topRowHeight
+        }
 
-            Image {
-                id: boxartImage
-
-                readonly property double aspectRatio: (implicitWidth / implicitHeight) || 0
-
-                anchors.fill: parent
-                asynchronous: true
-                source: currentGame.assets.boxFront ||
-                        currentGame.assets.logo ||
-                        currentGame.assets.screenshot ||
-                        currentGame.assets.marquee
-                sourceSize { width: 256; height: 256 } // optimization (max size)
-                fillMode: Image.PreserveAspectFit
-                horizontalAlignment: Image.AlignLeft
+        // Game name above the details, cut with "..." if too long
+        GameInfoText {
+            id: titleText
+            anchors {
+                top: mediaArea.top
+                left: parent.left; leftMargin: content.textLeft
+                right: mediaArea.left; rightMargin: content.paddingH
             }
+            text: currentGame.title
+            font.pixelSize: vpx(28)
+            font.weight: Font.Normal
+            font.capitalization: Font.MixedCase
         }
 
         // While the game details could be a grid, I've separated them to two
@@ -144,8 +175,8 @@ FocusScope {
         Column {
             id: gameLabels
             anchors {
-                top: boxart.top
-                left: boxart.right; leftMargin: content.paddingH
+                top: titleText.bottom; topMargin: vpx(8)
+                left: parent.left; leftMargin: content.textLeft
             }
 
             GameInfoText { text: "Rating:" }
@@ -163,7 +194,7 @@ FocusScope {
             anchors {
                 top: gameLabels.top
                 left: gameLabels.right; leftMargin: content.paddingH
-                right: gameList.left; rightMargin: content.paddingH
+                right: mediaArea.left; rightMargin: content.paddingH
             }
 
             // 'width' is set so if the text is too long it will be cut. I also use some
@@ -178,21 +209,33 @@ FocusScope {
             GameInfoText { width: parent.width; text: Utils.formatPlayTime(currentGame.playTime) }
         }
 
-        // Game video on the bottom left, always playing (falls back to a screenshot)
+        // Game video on the top right, always playing. The box is sized to the
+        // system's screen aspect ratio right away, so it never changes size
+        // while a game is selected. The screenshot is shown until the video
+        // plays, and for games without a video.
         Rectangle {
             id: media
-            anchors {
-                top: boxart.bottom; topMargin: content.paddingV
-                left: boxart.left
-                bottom: parent.bottom; bottomMargin: content.paddingV
-            }
-            width: Math.min(height * 16 / 9, (gameList.x - x) * 0.55)
+            anchors { top: mediaArea.top; right: mediaArea.right }
+
+            readonly property real aspectRatio: Utils.screenAspect(currentCollection.shortName)
+
+            width: Math.min(mediaArea.height * aspectRatio, mediaArea.width)
+            height: width / aspectRatio
             color: "#000"
+
+            function reload() {
+                gameVideo.stop();
+                gameVideo.source = "";
+                if (root.enabled && currentGame && currentGame.assets.video)
+                    videoDelay.restart();
+                else
+                    videoDelay.stop();
+            }
 
             Image {
                 anchors.fill: parent
                 asynchronous: true
-                source: currentGame.assets.screenshot || currentGame.assets.boxFront
+                source: currentGame.assets.screenshot
                 sourceSize { width: 512; height: 512 }
                 fillMode: Image.PreserveAspectFit
                 visible: gameVideo.playbackState !== MediaPlayer.PlayingState
@@ -206,19 +249,10 @@ FocusScope {
                 muted: true
                 visible: playbackState === MediaPlayer.PlayingState
 
-                // Wait a bit before loading, so scrolling through the list stays smooth
-                function reload() {
-                    stop();
-                    source = "";
-                    if (root.enabled && currentGame && currentGame.assets.video)
-                        videoDelay.restart();
-                    else
-                        videoDelay.stop();
-                }
-
+                // Short wait so fast scrolling doesn't load every video on the way
                 Timer {
                     id: videoDelay
-                    interval: 300
+                    interval: 100
                     onTriggered: {
                         gameVideo.source = currentGame.assets.video;
                         gameVideo.play();
@@ -227,14 +261,40 @@ FocusScope {
             }
         }
 
-        // Game description on the right of the video, scrolling up automatically
+        // Boxart below the video, aligned to the same right edge
+        Item {
+            id: boxart
+            anchors {
+                top: mediaArea.bottom; topMargin: content.rowGap
+                right: mediaArea.right
+                bottom: parent.bottom; bottomMargin: content.paddingV
+            }
+            // Only as wide as the image itself, so the description can use the rest
+            width: Math.min(height * boxartImage.aspectRatio, vpx(200))
+
+            Image {
+                id: boxartImage
+                readonly property real aspectRatio: (implicitWidth / implicitHeight) || 0
+                anchors.fill: parent
+                asynchronous: true
+                source: currentGame.assets.boxFront ||
+                        currentGame.assets.logo ||
+                        currentGame.assets.marquee
+                sourceSize { width: 256; height: 256 } // optimization (max size)
+                fillMode: Image.PreserveAspectFit
+                horizontalAlignment: Image.AlignRight
+                verticalAlignment: Image.AlignTop
+            }
+        }
+
+        // Game description below the details, scrolling up automatically
         Item {
             id: descriptionBox
             anchors {
-                top: media.top
-                left: media.right; leftMargin: content.paddingH
-                right: gameList.left; rightMargin: content.paddingH
-                bottom: media.bottom
+                top: mediaArea.bottom; topMargin: content.rowGap
+                left: parent.left; leftMargin: content.textLeft
+                right: boxart.left; rightMargin: vpx(15)
+                bottom: parent.bottom; bottomMargin: content.paddingV
             }
             clip: true
 
@@ -254,7 +314,7 @@ FocusScope {
                 width: parent.width
 
                 text: currentGame.description
-                font.pixelSize: vpx(13)
+                font.pixelSize: vpx(16)
                 wrapMode: Text.WordWrap
                 elide: Text.ElideNone
 
@@ -277,6 +337,34 @@ FocusScope {
             }
         }
 
+        // Translucent full-height panel behind the game list
+        Rectangle {
+            id: listPanel
+            anchors {
+                top: parent.top
+                bottom: parent.bottom
+                right: parent.right
+                left: gameList.left; leftMargin: -content.paddingH
+            }
+            color: Qt.rgba(0, 0, 0, 0.35)
+
+            // Soft shadow and a thin highlight line on the left edge
+            Rectangle {
+                anchors { top: parent.top; bottom: parent.bottom; right: parent.left }
+                width: vpx(10)
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "transparent" }
+                    GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.2) }
+                }
+            }
+            Rectangle {
+                anchors { top: parent.top; bottom: parent.bottom; left: parent.left }
+                width: vpx(1)
+                color: Qt.rgba(1, 1, 1, 0.2)
+            }
+        }
+
         ListView {
             id: gameList
             width: parent.width * 0.35
@@ -293,16 +381,16 @@ FocusScope {
             delegate: Rectangle {
                 readonly property bool selected: ListView.isCurrentItem
                 readonly property color clrDark: "#393a3b"
-                readonly property color clrLight: "#97999b"
+                readonly property color clrLight: "#e8e9ea"
 
                 width: ListView.view.width
                 height: gameTitle.height
-                color: selected ? clrDark : clrLight
+                color: selected ? Qt.rgba(1, 1, 1, 0.85) : "transparent"
 
                 Text {
                     id: gameTitle
                     text: modelData.title
-                    color: parent.selected ? parent.clrLight : parent.clrDark
+                    color: parent.selected ? parent.clrDark : parent.clrLight
 
                     font.pixelSize: vpx(20)
                     font.capitalization: Font.AllUppercase

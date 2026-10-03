@@ -1,4 +1,4 @@
-import QtQuick 2.0
+import QtQuick 2.15 // Connections.enabled and function-style handlers need 2.15
 
 // Welcome! This is the entry point of the theme; it defines two "views"
 // and a way to move (and animate moving) between them.
