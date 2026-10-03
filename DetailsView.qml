@@ -67,6 +67,7 @@ FocusScope {
     function selectSourceIndex(sourceIndex) {
         const row = sourceIndex >= 0 ? shownGames.mapFromSource(sourceIndex) : -1;
         currentGameIndex = row >= 0 ? row : 0;
+        gameList.positionViewAtIndex(currentGameIndex, ListView.Center);
     }
 
     function toggleFavoritesOnly() {
@@ -93,6 +94,69 @@ FocusScope {
     signal prevCollection
     signal launchGame
 
+    // Button hints show only the gamepad or only the keyboard, depending on
+    // which one was used last (Pegasus can't tell if a gamepad is connected).
+    // "" = not known yet, both are shown.
+    property string inputMode: api.memory.get('inputMode') || ""
+    readonly property var hintKeys: [
+        api.keys.accept, api.keys.cancel, api.keys.filters, api.keys.details,
+        api.keys.prevPage, api.keys.nextPage, api.keys.pageUp, api.keys.pageDown
+    ]
+
+    function setInputMode(mode) {
+        if (mode !== inputMode) {
+            inputMode = mode;
+            api.memory.set('inputMode', mode);
+        }
+    }
+
+    function updateInputMode(event) {
+        // The D-pad arrives as arrow keys; Pegasus sends those without a
+        // hardware scan code, while a real keyboard always has one
+        if (event.key === Qt.Key_Up || event.key === Qt.Key_Down
+                || event.key === Qt.Key_Left || event.key === Qt.Key_Right) {
+            setInputMode(event.nativeScanCode === 0 ? "pad" : "keyboard");
+            return;
+        }
+        for (const list of hintKeys) {
+            for (let i = 0; i < list.length; i++) {
+                if (list[i].key === event.key) {
+                    setInputMode(list[i].name().startsWith("Gamepad") ? "pad" : "keyboard");
+                    return;
+                }
+            }
+        }
+    }
+
+    // The first gamepad button and keyboard key bound to an action, as text
+    function keyName(list, pad) {
+        for (let i = 0; i < list.length; i++) {
+            const name = list[i].name();
+            if (name.startsWith("Gamepad") !== pad)
+                continue;
+            if (!pad)
+                return name === "Return" ? "Enter" : name;
+            // Gamepad names look like "Gamepad0 (A)", keep the button name
+            const match = name.match(/\(([^)]+)\)/);
+            return match ? match[1] : name.substring(7);
+        }
+        return "";
+    }
+    function keyHint(list) {
+        const pad = keyName(list, true);
+        const kbd = keyName(list, false);
+        if (inputMode === "pad" || !kbd) return pad;
+        if (inputMode === "keyboard" || !pad) return kbd;
+        return pad + " / " + kbd;
+    }
+    function keyPairHint(first, second) {
+        const pad = keyName(first, true) + "/" + keyName(second, true);
+        const kbd = keyName(first, false) + "/" + keyName(second, false);
+        if (inputMode === "pad") return pad;
+        if (inputMode === "keyboard") return kbd;
+        return pad + " · " + kbd;
+    }
+
     // Restart the video when the selected game changes or the view gets/loses focus
     onCurrentGameChanged: media.reload()
     onEnabledChanged: media.reload()
@@ -101,6 +165,18 @@ FocusScope {
     Keys.onLeftPressed: prevCollection()
     Keys.onRightPressed: nextCollection()
     Keys.onPressed: {
+        // Page up/down jump by one screen of the list (holding repeats)
+        if (api.keys.isPageDown(event)) {
+            event.accepted = true;
+            gameList.currentIndex = Math.min(gameList.count - 1, gameList.currentIndex + gameList.rowsPerPage);
+            return;
+        }
+        if (api.keys.isPageUp(event)) {
+            event.accepted = true;
+            gameList.currentIndex = Math.max(0, gameList.currentIndex - gameList.rowsPerPage);
+            return;
+        }
+
         if (event.isAutoRepeat)
             return;
 
@@ -465,6 +541,17 @@ FocusScope {
 
             focus: true
 
+            // The list gets every key first and consumes up/down itself, so the
+            // input mode is checked here (without accepting the event)
+            Keys.onPressed: root.updateInputMode(event)
+
+            // How many rows fit on screen, for page up/down
+            readonly property int rowsPerPage: currentItem ? Math.max(1, Math.floor(height / currentItem.height)) : 1
+
+            // The view doesn't scroll while hidden (eg. when restoring the
+            // position on startup), so scroll to the selection when shown
+            onVisibleChanged: if (visible) positionViewAtIndex(currentIndex, ListView.Center)
+
             model: shownGames
             delegate: Rectangle {
                 readonly property bool selected: ListView.isCurrentItem
@@ -532,12 +619,14 @@ FocusScope {
             spacing: vpx(18)
 
             Repeater {
+                // Key names come from the Pegasus key settings
                 model: [
-                    { pad: "A", key: "Enter", label: "LAUNCH" },
-                    { pad: "B", key: "Esc", label: "BACK" },
-                    { pad: "Y", key: "F", label: currentGame && currentGame.favorite ? "UNFAVORITE" : "FAVORITE" },
-                    { pad: "X", key: "I", label: root.favoritesOnly ? "SHOW ALL" : "FAVORITES ONLY" },
-                    { pad: "L1/R1", key: "Q/E", label: "SYSTEM" }
+                    { keys: keyHint(api.keys.accept), label: "LAUNCH" },
+                    { keys: keyHint(api.keys.cancel), label: "BACK" },
+                    { keys: keyHint(api.keys.filters), label: currentGame && currentGame.favorite ? "UNFAVORITE" : "FAVORITE" },
+                    { keys: keyHint(api.keys.details), label: root.favoritesOnly ? "SHOW ALL" : "FAVORITES ONLY" },
+                    { keys: keyPairHint(api.keys.pageUp, api.keys.pageDown), label: "PAGE" },
+                    { keys: keyPairHint(api.keys.prevPage, api.keys.nextPage), label: "SYSTEM" }
                 ]
 
                 Row {
@@ -554,7 +643,7 @@ FocusScope {
                         Text {
                             id: keyText
                             anchors.centerIn: parent
-                            text: modelData.pad + " / " + modelData.key
+                            text: modelData.keys
                             font.family: "Open Sans"
                             font.pixelSize: vpx(11)
                             color: "#e8e9ea"

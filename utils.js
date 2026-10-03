@@ -53,7 +53,7 @@ function formatPlayTime(playTime) {
 var screenAspects = {
     "gb": 10 / 9, "gbc": 10 / 9, "gamegear": 10 / 9, "megaduck": 10 / 9,
     "gba": 3 / 2, "pokemini": 3 / 2,
-    "nds": 2 / 3,            // two stacked 256x192 screens
+    "nds": 4 / 3,            // videos usually show one 256x192 screen
     "3ds": 5 / 6,            // 400x240 over 320x240
     "psp": 16 / 9, "psvita": 16 / 9,
     "ngp": 20 / 19, "ngpc": 20 / 19,
