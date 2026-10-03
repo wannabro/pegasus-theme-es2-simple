@@ -15,9 +15,19 @@ Item {
     Behavior on opacity { NumberAnimation { duration: 150 } }
 
 
+    // Every logo gets about the same area, so long wordmarks don't look much
+    // bigger than square-ish ones
     Image {
         id: image
-        anchors.fill: parent
+        readonly property real aspect: implicitHeight > 0 ? implicitWidth / implicitHeight : 4
+        readonly property real targetArea: vpx(150) * vpx(150)
+        readonly property real fitWidth: Math.min(Math.sqrt(targetArea * aspect),
+                                                  parent.width * 0.8,
+                                                  parent.height * 0.9 * aspect)
+
+        anchors.centerIn: parent
+        width: fitWidth
+        height: fitWidth / aspect
         fillMode: Image.PreserveAspectFit
 
         source: shortName ? "logo/%1.svg".arg(shortName) : ""
