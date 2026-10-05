@@ -492,14 +492,28 @@ FocusScope {
                     }
                 }
             }
+            // LaunchBox rating (x-rating keeps the decimals the whole-percent rating loses)
+            // and its vote count (x-votes)
             Text {
+                readonly property var extra: currentGame ? currentGame.extra : null
+                readonly property real exact: extra ? parseFloat(extra["rating"] || extra["x-rating"]) : NaN
+                readonly property int votes: extra ? (parseInt(extra["votes"] || extra["x-votes"]) || 0) : 0
                 anchors.verticalCenter: parent.verticalCenter
                 visible: currentGame.rating > 0
-                text: (currentGame.rating * 5).toFixed(1)
+                text: (isNaN(exact) ? currentGame.rating * 5 : exact).toFixed(1)
                 font.family: "Open Sans"
                 font.pixelSize: vpx(16)
                 font.weight: Font.DemiBold
                 color: "#fff"
+
+                Text {
+                    anchors { left: parent.right; leftMargin: vpx(6); baseline: parent.baseline }
+                    visible: parent.votes > 0
+                    text: "(" + String(parent.votes).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + ")"
+                    font.family: "Open Sans"
+                    font.pixelSize: vpx(14)
+                    color: Qt.rgba(1, 1, 1, 0.5)
+                }
             }
         }
 
@@ -546,6 +560,7 @@ FocusScope {
         // Games without a video show their screenshot instead.
         // Soft shadow under the video box
         RectangularGlow {
+            visible: media.visible
             x: media.x + vpx(4)
             y: media.y + vpx(8)
             width: media.width
@@ -572,7 +587,11 @@ FocusScope {
             readonly property real aspectRatio: {
                 const extra = currentGame ? currentGame.extra : null;
                 const measured = extra ? parseFloat(extra["video-aspect"] || extra["x-video-aspect"]) : NaN;
-                return measured > 0 ? measured : Utils.screenAspect(currentCollection.shortName);
+                if (measured > 0)
+                    return measured;
+                if (boxAsMedia)
+                    return boxProbe.implicitWidth / boxProbe.implicitHeight;
+                return Utils.screenAspect(currentCollection.shortName);
             }
 
             width: Math.min(mediaArea.height * aspectRatio, mediaArea.width)
@@ -580,6 +599,14 @@ FocusScope {
             color: "#000"
 
             readonly property bool hasVideo: !!(currentGame && currentGame.assets.video)
+            // No video and no screenshot, but a landscape box image (arcade title/snap
+            // pictures, e.g. CPS1/CPS2): that image takes the video's place and the
+            // boxart slot below stays empty
+            readonly property bool hasScreenshot: !!(currentGame && currentGame.assets.screenshot)
+            readonly property bool boxAsMedia: !hasVideo && !hasScreenshot && boxProbe.status === Image.Ready
+                                               && boxProbe.implicitWidth > boxProbe.implicitHeight * 1.2
+            // No video, screenshot or landscape box: hide the box instead of showing it black
+            visible: hasVideo || hasScreenshot || boxAsMedia
 
             function reload() {
                 videoFadeIn.stop();
@@ -592,10 +619,18 @@ FocusScope {
                     videoDelay.stop();
             }
 
+            // Only looks at the box image while the game has no video or screenshot
+            Image {
+                id: boxProbe
+                asynchronous: true
+                source: (!media.hasVideo && !media.hasScreenshot && currentGame) ? currentGame.assets.boxFront : ""
+                visible: false
+            }
+
             Image {
                 anchors.fill: parent
                 asynchronous: true
-                source: currentGame.assets.screenshot
+                source: media.boxAsMedia ? currentGame.assets.boxFront : currentGame.assets.screenshot
                 sourceSize { width: 512; height: 512 }
                 fillMode: Image.PreserveAspectFit
                 visible: !media.hasVideo
@@ -650,9 +685,9 @@ FocusScope {
                 readonly property real aspectRatio: (implicitWidth / implicitHeight) || 0
                 anchors.fill: parent
                 asynchronous: true
-                source: currentGame.assets.boxFront ||
+                source: media.boxAsMedia ? "" : (currentGame.assets.boxFront ||
                         currentGame.assets.logo ||
-                        currentGame.assets.marquee
+                        currentGame.assets.marquee)
                 sourceSize { width: 256; height: 256 } // optimization (max size)
                 fillMode: Image.PreserveAspectFit
                 horizontalAlignment: Image.AlignRight
@@ -809,9 +844,11 @@ FocusScope {
                     id: gameTitle
                     text: (modelData.favorite ? "★ " : "") + modelData.title
                     color: parent.selected ? parent.clrDark : parent.clrLight
-                    // Rows further from the selection fade out a little
+                    // Rows further from the middle of the list fade out a little
+                    // (by position, so rows scrolled in with the mouse look normal)
                     opacity: parent.selected ? 1.0
-                             : Math.max(0.3, 1.0 - Math.abs(index - gameList.currentIndex) * 0.05)
+                             : Math.max(0.3, 1.0 - Math.abs(parent.y - gameList.contentY + parent.height / 2
+                                                            - gameList.height / 2) / parent.height * 0.05)
 
                     font.pixelSize: vpx(20)
                     font.weight: parent.selected ? Font.DemiBold : Font.Normal
@@ -824,6 +861,16 @@ FocusScope {
                     elide: Text.ElideRight
                     leftPadding: vpx(10)
                     rightPadding: leftPadding
+                }
+
+                // Click selects the game, double click launches it
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: gameList.currentIndex = index
+                    onDoubleClicked: {
+                        gameList.currentIndex = index;
+                        root.launchGame();
+                    }
                 }
             }
 
@@ -841,15 +888,15 @@ FocusScope {
         anchors.right: parent.right
         height: vpx(25) * 1.5
 
-        // Which games the list shows, on the left
+        // On the left, only while the list is filtered (the header already
+        // shows the total count)
         Text {
             anchors {
                 verticalCenter: parent.verticalCenter
                 left: parent.left; leftMargin: header.paddingH
             }
-            text: root.favoritesOnly
-                  ? "★ FAVORITES  %1 / %2".arg(shownGames.count).arg(currentCollection.games.count)
-                  : "ALL GAMES  %1".arg(shownGames.count)
+            visible: root.favoritesOnly
+            text: "★ FAVORITES  %1 / %2".arg(shownGames.count).arg(currentCollection.games.count)
             font.family: "Open Sans"
             font.pixelSize: vpx(13)
             color: Qt.rgba(1, 1, 1, 0.75)
