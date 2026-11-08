@@ -174,17 +174,22 @@ Item {
     function merge(files) {
         const games = gamesByKey();
 
-        // The first sync of a device adds its current favorites (as the oldest
-        // change, so any real change on another device wins)
+        // The first sync of a device: if other devices already share their
+        // favorites, this one joins them and takes their state as is (a local
+        // favorite they don't have is removed: they only record favorites, so
+        // merging would bring back what was removed there). The very first
+        // device adds its current favorites, as the oldest change.
         const changes = own;
-        if (!seeded) {
+        const others = Object.keys(files).filter(function(name) { return name !== device + ".json"; });
+        const joining = !seeded && others.length > 0;
+        if (!seeded && !joining) {
             for (const key in games) {
                 if (games[key].favorite && !changes[key])
                     changes[key] = [1, 0];
             }
-            seeded = true;
             dirty = true;
         }
+        seeded = true;
         // Our own uploaded file counts too, in case the theme memory was reset
         const mine = files[device + ".json"] || {};
         for (const key in mine) {
@@ -209,11 +214,10 @@ Item {
         }
 
         let changed = 0;
-        for (const key in latest) {
-            const game = games[key];
-            const fav = latest[key][0] === 1;
-            if (game && game.favorite !== fav) {
-                game.favorite = fav;
+        for (const key in games) {
+            const fav = latest[key] ? latest[key][0] === 1 : (joining ? false : games[key].favorite);
+            if (games[key].favorite !== fav) {
+                games[key].favorite = fav;
                 changed++;
             }
         }
