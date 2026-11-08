@@ -38,6 +38,8 @@ FocusScope {
         api.memory.set('collectionName', collection ? collection.name : '');
         api.memory.set('gameTitle', game ? game.title : '');
         api.memory.set('view', detailsView.focus ? 'details' : 'collections');
+        // Copy, so the memory sees a changed value
+        api.memory.set('collectionStates', JSON.parse(JSON.stringify(detailsView.collectionStates)));
     }
 
     // Also save shortly after the selection changes, in case Pegasus is not

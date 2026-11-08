@@ -40,11 +40,54 @@ FocusScope {
     // Set by the main theme before restoring, to select that game once
     property string restoreTitle: ""
 
-    // Show only the favorites by default if the collection has any. A game
-    // restored from the last session is always shown, even if not a favorite.
+    // Each collection remembers its filter and selected game, so going to another
+    // system and back keeps them: { <collection name>: { fav, title, index } }.
+    // Saved with the theme's memory (see savePosition in theme.qml).
+    property var collectionStates: api.memory.get('collectionStates') || ({})
+    // The collection the list currently shows its state for; while switching,
+    // currentCollection is already the new one and nothing is recorded
+    property string stateName: ""
+
+    function recordState() {
+        if (!currentCollection || currentCollection.name !== stateName || !currentGame)
+            return;
+        // Reading a var property may give a copy, so set the whole object back
+        const states = collectionStates;
+        states[stateName] = {
+            fav: favoritesOnly, title: currentGame.title, index: currentSourceIndex
+        };
+        collectionStates = states;
+    }
+    onCurrentSourceIndexChanged: recordState()
+    onFavoritesOnlyChanged: recordState()
+
+    // A collection seen before gets its filter and game back. Otherwise show only
+    // the favorites if the collection has any; a game restored from the last
+    // session is always shown, even if not a favorite.
     function applyDefaultFilter() {
         const games = currentCollection.games;
-        let sourceIndex = currentSourceIndex;
+        const saved = collectionStates[currentCollection.name];
+        stateName = currentCollection.name;
+        if (saved) {
+            restoreTitle = "";
+            let sourceIndex = -1;
+            if (saved.index < games.count && games.get(saved.index).title === saved.title) {
+                sourceIndex = saved.index;
+            } else {
+                for (let i = 0; i < games.count; i++) {
+                    if (games.get(i).title === saved.title) {
+                        sourceIndex = i;
+                        break;
+                    }
+                }
+            }
+            favoritesOnly = saved.fav && favoriteCount > 0;
+            selectSourceIndex(sourceIndex);
+            recordState();
+            return;
+        }
+
+        let sourceIndex = -1; // first game
         let mustShow = false;
         if (restoreTitle !== "") {
             sourceIndex = -1;
@@ -62,6 +105,7 @@ FocusScope {
         if (mustShow && favoritesOnly && !games.get(sourceIndex).favorite)
             favoritesOnly = false;
         selectSourceIndex(sourceIndex);
+        recordState();
     }
 
     function selectSourceIndex(sourceIndex) {
@@ -343,7 +387,13 @@ FocusScope {
         }
 
         Text {
-            text: "%1  ·  %2 GAMES".arg(currentCollection.name).arg(currentCollection.games.count)
+            // Position of the selected game: among the favorites while only those
+            // are shown, else among all games
+            text: root.favoritesOnly
+                  ? "%1  ·  ★ %2 / %3 FAVORITES".arg(currentCollection.name)
+                        .arg(currentGameIndex + 1).arg(shownGames.count)
+                  : "%1  ·  %2 / %3 GAMES".arg(currentCollection.name)
+                        .arg(currentGameIndex + 1).arg(currentCollection.games.count)
             elide: Text.ElideLeft
             font.capitalization: Font.AllUppercase
             font.family: "Open Sans"
@@ -509,7 +559,15 @@ FocusScope {
                 Text {
                     anchors { left: parent.right; leftMargin: vpx(6); baseline: parent.baseline }
                     visible: parent.votes > 0
-                    text: "(" + String(parent.votes).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + ")"
+                    // thousands separator without a zero-width regex: Qt's JS engine inserted the comma twice ("1,,837")
+                    text: {
+                        var s = String(parent.votes), o = "";
+                        for (var i = 0; i < s.length; i++) {
+                            if (i > 0 && (s.length - i) % 3 === 0) o += ",";
+                            o += s.charAt(i);
+                        }
+                        return "(" + o + ")";
+                    }
                     font.family: "Open Sans"
                     font.pixelSize: vpx(14)
                     color: Qt.rgba(1, 1, 1, 0.5)
