@@ -9,6 +9,7 @@ FocusScope {
     Component.onCompleted: {
         restorePosition();
         restoreReady = true;
+        favoriteSync.sync();
     }
     // The theme is unloaded before Pegasus quits, so this saves the position
     // even if no game was launched
@@ -61,6 +62,9 @@ FocusScope {
         function onFocusChanged() { saveTimer.restart(); }
     }
 
+    // Favorites shared with other devices through a WebDAV folder (see the file)
+    FavoriteSync { id: favoriteSync }
+
     // Loading the fonts here makes them usable in the rest of the theme
     // and can be referred to using their name and weight.
     FontLoader { source: "fonts/OPENSANS.TTF" }
@@ -87,6 +91,7 @@ FocusScope {
         onCancel: collectionsView.focus = true
         onNextCollection: collectionsView.selectNext()
         onPrevCollection: collectionsView.selectPrev()
+        onFavoriteToggled: favoriteSync.record(game)
         onLaunchGame: {
             savePosition();
             currentGame.launch();

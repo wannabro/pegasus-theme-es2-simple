@@ -137,6 +137,8 @@ FocusScope {
     signal nextCollection
     signal prevCollection
     signal launchGame
+    // The player toggled the game's favorite flag (for the favorite sync)
+    signal favoriteToggled(var game)
 
     // Button hints show only the gamepad or only the keyboard, depending on
     // which one was used last (Pegasus can't tell if a gamepad is connected).
@@ -255,6 +257,7 @@ FocusScope {
             const sourceIndex = currentSourceIndex;
             const wasLast = favoritesOnly && favoriteCount === 1 && currentGame.favorite;
             currentGame.favorite = !currentGame.favorite;
+            favoriteToggled(currentGame);
             if (wasLast) {
                 favoritesOnly = false;
                 selectSourceIndex(sourceIndex);
